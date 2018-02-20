@@ -4,7 +4,7 @@ options(stringsAsFactors = F)
 #setwd("~/RAPM/nba-pbp-data")
 
 ####ENTER SEASON AND NAME TO SAVE FILE AS####
-season<-"2016-17"
+season<-"2016-17" #season must be of form 20XX-(XX+1)
 fileName<-"PBP1617"
 
 
