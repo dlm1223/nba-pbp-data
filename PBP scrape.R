@@ -5,8 +5,7 @@ options(stringsAsFactors = F)
 
 ####ENTER SEASON AND NAME TO SAVE FILE AS####
 season<-"2016-17" #season must be of form 20XX-(XX+1)
-fileName<-"PBP1617"
-
+fileName<-"PBP17" #save as "PBP(XX+1)" if planning to run RAPM analysis
 
 ##SCRAPE TEAM-GAME LOGS TO GET ALL GAMEIDS#####
 getGames<-function( Season, Type){
