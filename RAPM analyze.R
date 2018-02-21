@@ -4,10 +4,6 @@ years<-2010:2013
 source("RAPM load data.R")
 
 head(stints[, 1:20])
-#save some data for RMarkdown
-# save(stints, file="~/UVA/NBA/stints.Rda")
-# save(coefs, file="~/UVA/NBA/coefs.Rda")
-# save(fitList, file="~/UVA/NBA/fitList.Rda")
 
 ###CLEAN DATA#####
 
@@ -142,3 +138,12 @@ Metrics( final$MARGIN, final$predMARGIN)
 cor( final$MARGIN,final$predMARGIN)
 
 
+#save some data for RMarkdown
+# coefs<-data.frame(as.matrix(coef(fit)))
+# coefs$PLAYER_ID<-gsub("X", "", row.names(coefs))
+# coefs<-merge(coefs, totals, by=c("PLAYER_ID"), all.x=T)
+# coefs$Name<-box$PLAYER_NAME[match( coefs$PLAYER_ID, box$PLAYER_ID)]
+# colnames(coefs)[2]<-"RAPM"
+# save(stints, file="stints.Rda")
+# save(coefs, file="coefs.Rda")
+# save(fitList, file="fitList.Rda")

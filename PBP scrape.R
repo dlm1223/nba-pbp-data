@@ -7,6 +7,7 @@ options(stringsAsFactors = F)
 season<-"2016-17" #season must be of form 20XX-(XX+1)
 fileName<-"PBP17" #save as "PBP(XX+1)" if planning to run RAPM analysis
 
+
 ##SCRAPE TEAM-GAME LOGS TO GET ALL GAMEIDS#####
 getGames<-function( Season, Type){
   url<-paste0(c("http://stats.nba.com/stats/leaguegamelog?Counter=1000&DateFrom=&DateTo=&Direction=DESC&LeagueID=00&PlayerOrTeam=T&Season=", 

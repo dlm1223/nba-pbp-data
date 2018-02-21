@@ -1,0 +1,143 @@
+---
+title: "RAPM in R"
+date: "September 8, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+In this post I try to reproduce the RAPM study by [Joe Sill](http://www.sloansportsconference.com/wp-content/uploads/2015/09/joeSillSloanSportsPaperWithLogo.pdf). In the years since he did his paper, a lot of people have used RAPM or built from it so I thought it would be useful to try reproducing it since I haven't seen any posts online that had the full cross-validation. The data I used for this was play-by-play data scraped from NBA.com and the cleaned data comprises of a unique row for every game stint without a substitution. For each stint, the possessions and scoring are tallied. The goal of RAPM is to estimate individual players' effect on scoring margin.
+
+
+```{r , echo=F, eval=T , include=F}
+load("stints.Rda")
+load("fitList.Rda")
+stints<-data.frame(stints)
+stints$MARGIN<-100*((stints$HomeEnd-stints$HomeStart)-(stints$AwayEnd-stints$AwayStart))/stints$POSSESSIONS
+stints$MARGIN[stints$POSSESSIONS==0]<-0
+stints$StartDIFF<-stints$HomeStart-stints$AwayStart
+stints$TimeTotal<-stints$TimeEnd-stints$TimeStart
+stints[is.na(stints)]<-0
+
+totals<-data.frame(POSS=abs(t(as.matrix(stints[, grepl("X", colnames(stints))])))%*%as.matrix(stints$POSSESSIONS))
+totals$PLAYER_ID<-gsub("X", "", row.names(totals))
+totals$MIN<-as.vector(abs(t(as.matrix(stints[, grepl("X", colnames(stints))])))%*%as.matrix(stints$TimeTotal))
+
+# head(stints)
+```
+
+
+
+Below is how the stints data looks, the columns are players' NBA.com ID
+
+```{r, echo=T, eval=T , include=T}
+head(stints[, c(colnames(stints)[1:10], "MARGIN", "POSSESSIONS", "GAME_ID")])
+```
+
+
+
+Totals are just aggregated totals, which are useful later when lumping together low-minutes players.
+
+```{r, echo=T, eval=T,  include=T}
+head(totals)
+```
+
+
+
+After the data is prepared, I can start preparing parameters and cross validation. In the RAPM paper, he mentions three parameters he tried out to prevent overfitting: 1. a minutes-cutoff for aggregating low-minutes players, 2. a year-weighting for discounting older observations, and 3. different lambda for the regularized regression.
+
+```{r, echo=T,eval=F, include=T}
+cutoff_param<-c( 100, 1000)
+year_param<-c(.25, .5)
+lambda_param<-c( 2000, 100, 10 )
+```
+
+I also specify the folds that I use. I'm fitting the models on 2012/13, 2013/14, 2014/15 data so it's important that the out-of-fold data is the 14/15 data so that the year-weights make sense.
+
+```{r, echo=T,eval=F, include=T}
+nfolds<-10
+folds<-replicate(nfolds, sample(which(stints$Year==2015 & stints$POSSESSIONS>0),size=20000, replace=F)) #include some of 15 data in fold
+folds<-rbind(folds,replicate(nfolds, which(stints$Year<2015 & stints$POSSESSIONS>0)))
+outfolds<-sapply(1:ncol(folds),function(x) setdiff(which(stints$POSSESSIONS>0), folds[,x])) #rest of 15 out of fold
+```
+
+
+
+Finally, I wrote a loop for cross validation. Glmnet allows you to specify multiple lambdas so I wrap that function with a loop for the testGrid parameters. It's pretty ugly but it gets the job done. Overall, what it's doing is retraining a regularized regression model with different parameter specifications and then storing the OOF CV errors in "fitList". In the end, fitList will hold the mean 10-fold CV-error for each parameter combo of testGrid and so it will be of length testGrid.
+
+
+```{r, echo=T,eval=F, include=T}
+testGrid<-expand.grid(cutoff_param=cutoff_param,year_param=year_param)
+
+cl<-makeCluster(2, type = "SOCK")
+registerDoSNOW(cl)
+
+#for each parameter combo
+fitList<-  foreach(k=1:nrow(testGrid), .packages = c("glmnet")) %dopar% {  
+  
+  #specify parameters and fit model on each CV fold
+  
+  players<-paste("X", totals$PLAYER_ID[totals$MIN>=testGrid$cutoff_param[k]]  , sep="")
+  stints$XOTHER<-rowSums(stints[, grepl("X", colnames(stints) ) & !grepl("OTHER", colnames(stints))& !colnames(stints)%in% players ])
+  indVars<- c( "XOTHER",  players)
+  
+  errors<-lapply(1:nfolds, function(x){
+    fit<-glmnet( x=as.matrix(stints[folds[,x],indVars ]),
+                 y=stints$MARGIN[folds[,x]],
+                 weights=testGrid$year_param[k]^(max(stints$Year)-stints$Year[folds[,x]])*stints$POSSESSIONS[folds[,x]],
+                 alpha=0,  
+                 # standardize=F,
+                 lambda = lambda_param)
+    
+    #(out of fold errors are RMSE of predicted margins to actual margin, weighted by possessions)--I'm not aggregating by game here, don't think it shoud matter, just will make actual RMSE values not relevant on their own
+    
+    errors<-(predict(fit, newx=data.matrix(stints[outfolds[, x], indVars] ))*stints$POSSESSIONS[outfolds[,x]] -
+               stints$MARGIN[outfolds[,x]]*stints$POSSESSIONS[outfolds[,x]] )^2
+    errors<-sqrt(colMeans(errors))
+    errors
+  })
+  
+  #return parameters and aggregated results of OOF error for current testGrid row
+  cvm<-sapply(1:length(lambda_param), function(x) mean(sapply(errors, `[[`, x)))
+  cvsd<-sapply(1:length(lambda_param), function(x) sd(sapply(errors, `[[`, x)))
+  fit<-list();fit$cvm<-cvm;fit$cvsd<- cvsd;fit$lambda<-lambda_param;fit$year_param<-testGrid$year_param[k];fit$cutoff_param<-testGrid$cutoff_param[k]
+  fit
+}
+```
+
+
+
+I'm sure Joe Sills code is way better but mine works too.. anyway, with fitList I can look at the errors of each parameter and extract the optimal paramater combos,
+
+```{r, echo=T, eval=T, include=T}
+par(mfrow=c(2, 2))
+for(x in fitList){
+  plot(x$cvm~log(x$lambda), type="l", main=paste0(c("yearWeight: ", x$year_param, ", minCutoff: ", x$cutoff_param), collapse=""))
+}
+params<-fitList[[which.min(sapply(fitList, function(x) min(x$cvm)))]]
+params
+
+```
+
+
+As you can see, regularization (lambda) makes the biggest difference of the parameters. One weird thing is that I am getting a different optimal lambda (~100) versus the paper which was getting 2000. It could be from training on different years or maybe I'm doing something wrong. After getting the optimal parameters, I then refit the model on all the 2013-15 data using the optimal parameters. I didn't include the code for that, but it just is done by running glmnet on all the data. Below are the player coefficients. My coefficients are different than the ones I see normally, however when testing this on a test set I had good results. I'm a bit confused about that and it's possible they are using lambda=0 for the RAPM rankings I see online that have high coefficients. Finally, one thing I don't like about RAPM is it seems to over-inflate players on good teams, specifically someone like Draymond Green--I refuse to believe he's even a top 20 player.  I guess models don't have irrational burning hatred for players like I do though..
+
+```{r, echo=F,eval=T, include=T}
+load("coefs.Rda")
+library(data.table)
+coefs<-coefs[order(coefs$RAPM, decreasing = T), ]
+coefs<-data.table(coefs)
+coefs[c(1:20),]
+```
+
+
+The last thing I did was predicted on 2016 test data. On the training data for 2015 I was getting around .25 R^2, and I got around .17 R^2 on the test set of 2016, aggregating the data by GAME_ID. Overall, I think all of this was useful because seeing as the original RAPM paper was from a while ago, it might be the case that different parameters are now better. In the future I want to try adding more variables and experiment more with the model. You can view the code for this and the scripts for getting the PBP stints data on [Github](https://github.com/dlm1223/nba-pbp-data)
+
+
+
+
+
+
+
