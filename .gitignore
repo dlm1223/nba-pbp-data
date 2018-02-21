@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+*.html
 PBP08.RData
 PBP09.RData
 PBP10.RData
