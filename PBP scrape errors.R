@@ -1,4 +1,4 @@
-#helper file to pbp scrape function.R to handle errors. Most/all errors are from players in OT who didn't record a stat or sub in/out
+#helper file to pbp scrape function.R to handle errors. Most errors are from players in OT who didn't record a stat or sub in/out
 if(id=="0021700266"){
   nba[nba$Quarter==3& nba$Time>=9.45000000, box$PLAYER_ID[box$PLAYER_NAME=="Julius Randle"]]<-0
 }
